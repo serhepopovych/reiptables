@@ -1,0 +1,55 @@
+Re-configure iptables/ip6tables from tables template files
+==========================================================
+
+Create chains and rules from template files regardless of rules being
+currently configured or not.
+
+Template files implement generic firewall using network device groups
+and ip sets to achieve maximum performance and flexibility.
+
+Features and functionality
+--------------------------
+
+  o IPv4 and IPv6 support
+  o Unicast Reverse Path Filtering (uRPF) with option to skip
+  o L7 HTTP Redirect using TPROXY
+  o Stateless with UNTRACKED connection, stateful firewall and NAT
+  o Limiting number of tracked connections per source IP
+  o Setting Traffic Control (TC) priority from ip sets on src match
+  o Connection rate-limiting for SSH on port 22
+  o Non-silent discard of filtered at INPUT packets by rate-limited
+    per source responce send using:
+     - TCP RST for TCP
+     - ICMP Port Unreachable for UDP
+  o Discard filtered at FORWARD packets with ICMP Admin Prohibited.
+
+Concepts and implementation
+---------------------------
+
+Processing iptables/ip6tables rules are done linearly that has poor
+impact on performance. Thus to gain acceptable performance results
+number of rules should be kept at minimum that may affect flexibility.
+
+For flexibility ip sets with hash:net,port,net tuple support and others
+are used to match L3 and L4 information from packet.
+
+To keeping number of rules constant regardless of packet flow direction
+there is concept of zones (groups):
+
+  uplink   - external networks
+  downlink - internal (protected) networks
+
+  loopback   - host interface(s), not including system lo
+  management - connection to management network(s)
+  sink       - blackhole egress packets, no ingress
+
+By default connection tracking on for all (including transit) traffic
+coming to or originating from the box.
+
+To track thousands of connections hash tables are used that in case of
+multiple src,dst tuples can make hash tables very large negatively
+impacting performance and functionality. Maximum number of connection
+tracking entries allowed in network namespace controlled with
+net/nf_conntrack_max sysctl parameter. There are additional sysctl
+settings that control timeout for entries that can be used to kick
+outdated ones earlier.
