@@ -1,0 +1,3 @@
+[submodule ".subprojects/reipset"]
+	path = .subprojects/reipset
+	url = https://github.com/serhepopovych/reipset.git

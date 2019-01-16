@@ -1,0 +1,413 @@
+*filter
+
+:INP-RESET        - [0:0]
+:INP-DIVERT       - [0:0]
+:INP-BLOCK        - [0:0]
+:INP-22           - [0:0]
+:INP-RATE         - [0:0]
+:INPUT       ACCEPT [0:0]
+
+:FWD-RESET        - [0:0]
+:FWD-MAIL         - [0:0]
+:FWD-D2U          - [0:0]
+:FWD-U2D          - [0:0]
+:FWD-U2U          - [0:0]
+:FWD-D2D          - [0:0]
+:FORWARD     ACCEPT [0:0]
+
+:OUT-EST          - [0:0]
+:OUTPUT      ACCEPT [0:0]
+
+# Input packets destined to host itself (i.e. local)
+# ==================================================
+#
+# Chains specified in order they used.
+
+# Discard packets at input
+# ------------------------
+#
+# 1. Ratelimit sending discard replies to the origin of packet.
+#    Note that such rate limiting is only neccessary for TCP as
+#    ICMP has built in ratelimit control mechanisms which could
+#    be accessed with net/ipv4/icmp_ratelimit and sysctl variable.
+#
+# 2. For TCP send TCP packet with RST bit set to the origin.
+#
+# 3. For UDP send ICMP Destination Unreachable Port Unreachable.
+#
+# 4. Silently DROP packets of other types.
+#
+-A INP-RESET -m hashlimit --hashlimit-above 200/sec --hashlimit-burst 5 --hashlimit-mode srcip --hashlimit-name INP-RESET --hashlimit-htable-size 262144 --hashlimit-htable-gcinterval 10000 -j DROP
+-A INP-RESET -p tcp -j REJECT --reject-with tcp-reset
+-A INP-RESET -p udp -j REJECT --reject-with icmp-port-unreachable
+-A INP-RESET -j DROP
+
+# Input diverted packets
+# -----------------------
+#
+# Mark is done in 'raw' and 'mangle 'table. Packet routed locally using PBR
+# (see ip-rule(8) for more information) and fwmark value.
+#
+# See 'raw' and 'mangle' table configuration for more information.
+#
+# Note that packets for already established connection, matched using
+# conntrack as done for any locally delivered packets.
+#
+# 1. Allow packets for initial connection to input. Limit packet
+#    rate if needed. As source address mode is used and such address
+#    validated before (i.e. no address spoofing) we can safely
+#    keep relatively small hash table size and large gc interval.
+#
+# 2. Discard packet.
+#
+-A INP-DIVERT -m mark --mark 0x7f100050/0xfff1ffff -m hashlimit --hashlimit-upto 25/min --hashlimit-burst 5 --hashlimit-mode srcip --hashlimit-name INP-DIVERT-HTTP --hashlimit-htable-size 16384 --hashlimit-htable-gcinterval 30000 -j ACCEPT
+-A INP-DIVERT -j INP-RESET
+
+# Add entry to temporary block list from other rules
+# --------------------------------------------------
+#
+# 1. Add temporary blocking rule from other rules (e.g. service access
+#    rate limiting rules) with default ipset list timeout value.
+#    If you need custom timeout for listing entry as blocked, then you
+#    need to create custom chain, with same rule set as this, ut.
+#    specifying custom timeout (with --timeout option) for SET target.
+#
+# 2. Discard packet.
+#
+-A INP-BLOCK -m recent --remove --name INP-RATE --rsource -j SET --add-set inp-block-v4 dst,dst,src --exist
+-A INP-BLOCK -j INP-RESET
+
+# Rate limit packets to local service on port 22
+# ----------------------------------------------
+#
+# 1. Discard packet (and any further packets, see INP-BLOCK chain
+#    for more information) to port 22 if already more than 10
+#    packets within 60 seconds or less comes from given source.
+#
+# 2. Allow packet overwise and update it's arrival in recent
+#    for further inspection by the (1).
+#
+-A INP-22 -m recent --rcheck --seconds 60 --reap --hitcount 10 --rttl --name INP-RATE --rsource -j INP-BLOCK
+-A INP-22 -m recent --set --name INP-RATE --rsource -j ACCEPT
+
+# Rate limit packets to local service, listening on port
+# ------------------------------------------------------
+#
+# 1. Match packet, destined to the given service on local host
+#    and apply specific rate limiting policy for it.
+#
+# 2. If service has no specific ratelimiting policy, but
+#    requires rate limiting access to it (e.g.: flow reaches
+#    this chain), then packet rejected with ICMP Communication
+#    Administratively Prohibited.
+#
+-A INP-RATE -p tcp --dport 22 -j INP-22
+-A INP-RATE -j REJECT --reject-with icmp-admin-prohibited
+
+# INPUT chain
+# -----------
+#
+# Following policy applied incoming traffic at ingress:
+#
+# 1. Do not limit packets coming from system loopback (lo)
+#    interface.
+#
+# 2. Discard packets from foreign source to local destination address
+#    and port/proto, blocked by manually added entry into inp-block-v4 set
+#    or automatically by ratelimiting rules.
+#
+# 3. Accept packets for already ESTABLISHED connection and packets
+#    RELATED to the existing connection (like ftp-data channel,
+#    ICMPs).
+#
+# 4. Discard packets, that not initiate NEW connection or UNTRACKED
+#    by CT --notrack target in 'raw' table.
+#
+# 5. Input diverted packets. See below description for chain DIVERT.
+#
+# 6. Discard packets not going to allowed destination address and port
+#    from allowed foreign source.
+#
+# 7. Apply ratelimiting rules for packets destined locally to
+#    given address and port from specified foregin source address.
+#
+# 8. Accept packets, which are not subject for ratelimiting rules by
+#    chain policy.
+#
+-A INPUT -i lo -j ACCEPT
+-A INPUT -m set --match-set inp-block-v4 dst,dst,src -j INP-RESET
+-A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+-A INPUT -m conntrack ! --ctstate NEW,UNTRACKED -j INP-RESET
+-A INPUT -m mark --mark 0x7f100000/0xfff00000 -j INP-DIVERT
+-A INPUT -m set ! --match-set inp-allow-v4 dst,dst,src -j INP-RESET
+-A INPUT -m set --match-set inp-ratelimit-v4 dst,dst,src -j INP-RATE
+
+# Forward packets destined to other hosts
+# =======================================
+#
+# Chains specified in order they used.
+
+# Discard packets at forward
+# --------------------------
+#
+# Forward packets destined to the 'sink' interface group to let
+# sink drop packets (silently on dummy interface type).
+#
+# Reject with ICMP Destination Administratively Prohibited the rest.
+# ICMP is generated by the kernel routines and is subject to ratelimit.
+#
+# See net/ipv4/icmp_ratelimit sysctl variable for current ICMP ratelimit.
+#
+-A FWD-RESET -m devgroup --dst-group 0x6/0xf -j ACCEPT
+-A FWD-RESET -j REJECT --reject-with icmp-admin-prohibited
+
+# Forward mail traffic
+# --------------------
+#
+# 1. Discard packets, if it's address is in list of known spammers.
+#
+# 2. Accept packets from/to list of known mail servers.
+#
+# 3. Accept packets not destined to 25 port.
+#
+-A FWD-MAIL -m set --match-set mail-spammers-v4 src -j REJECT --reject-with icmp-admin-prohibited
+-A FWD-MAIL -m set --match-set mail-smtp-v4 src -j RETURN
+-A FWD-MAIL -m set --match-set mail-smtp-v4 dst -j RETURN
+-A FWD-MAIL -p tcp -m tcp ! --dport 25 -m set --match-set mail-smtps-v4 src -j RETURN
+-A FWD-MAIL -j REJECT --reject-with icmp-admin-prohibited
+
+# Forward UPLINK traffic to DOWNLINK
+# ----------------------------------
+#
+# First rule could be used to stop unwanted traffic from the given
+# source(s) on UPLINK to the given destination(s) on DOWNLINK (U2D).
+#
+# Next rule drops packets with incorrect connection tracking label.
+#
+# Next rule limits number of concurrent DNATed connections TO single host
+# (see --connlimit-mask) unless packet is labeled with UNTRACKED connection
+# tracking label. Generate ICMP Communication Administratively Prohibited
+# (type 3, code 13) when such limit is reached.
+#
+# Next five rules are dedicated to the Traffic Control (TC) system
+# to classify traffic.
+#
+# Class ID has following format:
+#
+#      |      MAJOR      |      MINOR      |
+#      +--------+--------+--------+--------+
+#      |00000000|00000001|WLXXXXXX|XXXXXXXX|
+#      +--------+--------+--------+--------+
+#      31              16 15              0
+#
+#  Bits from 0 to 13, marked with X, are borrowed unchanged
+#  from skb->priority, mapped from fwd-u2d-classify set
+#  skbinfo extension.
+#
+#  Bit 14 is set if packet from/to L[ocal] networks.
+#
+#  Bit 15 is set if packet from/to W[orld] networks.
+#
+#  Bits from 16 to 31 are form MAJOR class id, which is 1: in
+#  this case.
+#
+#  Following class id value(s) are reserved and should not be
+#  used as class id for general traffic classes:
+#
+#    1:0 - Default class of the qdisc on output interface.
+#
+#  Rules to classify packets:
+#
+#   Reset skb->priority field to point to default class since
+#   network stack (at least IPv4) might have set this field
+#   basing on data from packet's ToS/DiffServ field.
+#
+#   Map skb->priority to skbprio extension corresponding to
+#   matched source address in fwd-u2d-classify-v4 set. If no
+#   match is found then skb->priority left unchanged.
+#
+#   Set MAJOR class id to 1:, clear L[ocal] bit, save
+#   W[orld] bit (15) and class id from skbprio mapping.
+#   Accept packet.
+#
+#   Set MAJOR class id to 1:, clear W[orld] bit (15), save
+#   L[ocal] bit (14) and class id from skbprio mapping.
+#   Accept packet.
+#
+#   Set MAJOR class id to 1:, clear W[orld] bit (15) and
+#   L[ocal] bit (14) as packet goes either to the W[orld]
+#   or L[ocal] networks. Accept packet finally.
+#
+-A FWD-U2D -m set --match-set fwd-u2d-block-v4 src,dst,dst -j DROP
+-A FWD-U2D -m conntrack ! --ctstate ESTABLISHED,RELATED,UNTRACKED,DNAT -j DROP
+-A FWD-U2D -m conntrack --ctstate DNAT -m connlimit --connlimit-above 1024 --connlimit-mask 32 --connlimit-saddr -j REJECT --reject-with icmp-admin-prohibited
+-A FWD-U2D -j CLASSIFY --set-class 1:0
+-A FWD-U2D -j SET --map-set fwd-u2d-classify-v4 dst --map-prio
+#-A FWD-U2D -a accept -i %WO_IF% -j CLASSIFY --set-xclass 0x10000/0xffff4000
+#-A FWD-U2D -a accept -i %LO_IF% -j CLASSIFY --set-xclass 0x10000/0xffff8000
+-A FWD-U2D -a accept -j CLASSIFY --set-xclass 0x10000/0xffffc000
+
+# Forward DOWNLINK traffic to UPLINK
+# ----------------------------------
+#
+# First rule discards blocked traffic from DOWNLINK and not diverted to
+# local socket due to incorrect filtering rules, missing socket or
+# ratelimiting.
+#
+# Next rule could be used to stop unwanted traffic from the given source(s)
+# on DOWNLINK to the given destination(s) on UPLINK (D2U).
+#
+# Next rule drops packets with incorrect connection tracking label.
+#
+# Next rule limits total number of concurrent connections FROM single host
+# (see --connlimit-mask) unless packet is labeled with UNTRACKED connection
+# tracking label. Generate ICMP Communication Administratively Prohibited
+# (type 3, code 13) when such limit is reached.
+#
+# Next rule implements mail forwarding access policy.
+#
+# Next three rules dedicated for Traffic Control (TC) system
+# to classify traffic. For more information on Class ID format
+# see "Forward UPLINK traffic to DOWNLINK" description.
+#
+#   Reset skb->priority field to point to default class since
+#   network stack (at least IPv4) might have set this field
+#   basing on data from packet's ToS/DiffServ field.
+#
+#   Map skb->priority to skbprio extension corresponding to
+#   matched source address in fwd-d2u-classify-v4 set. If no
+#   match is found then skb->priority left unchanged.
+#
+#   Set MAJOR class id to 1:, clear W[orld] bit (15) and
+#   L[ocal] bit (14) as packet goes either to the W[orld]
+#   or L[ocal] networks. Accept packet finally.
+#
+-A FWD-D2U -m mark --mark 0x7f100000/0xfff00000 -j FWD-RESET
+-A FWD-D2U -m set --match-set fwd-d2u-block-v4 src,dst,dst -j DROP
+-A FWD-D2U -m conntrack ! --ctstate ESTABLISHED,RELATED,UNTRACKED,NEW,DNAT -j DROP
+-A FWD-D2U -m conntrack --ctstate NEW,DNAT -m connlimit --connlimit-above 1024 --connlimit-mask 32 --connlimit-saddr -j REJECT --reject-with icmp-admin-prohibited
+-A FWD-D2U -p tcp -m set --match-set mailports dst -j FWD-MAIL
+-A FWD-D2U -j CLASSIFY --set-class 1:0
+-A FWD-D2U -j SET --map-set fwd-d2u-classify-v4 src --map-prio
+-A FWD-D2U -a accept -j CLASSIFY --set-xclass 0x10000/0xffffc000
+
+# Forward DOWNLINK traffic to DOWNLINK
+# ------------------------------------
+#
+# First rule discards blocked traffic from DOWNLINK and not diverted to
+# local socket due to incorrect filtering rules, missing socket or
+# ratelimiting.
+#
+# Next rule could be used to stop unwanted traffic from the given source(s)
+# on DOWNLINK to the given destination(s) on DOWNLINK (D2D).
+#
+# Next rule drops packets with incorrect connection tracking label.
+#
+# Next rule limits total number of concurrent connections FROM single host
+# (see --connlimit-mask) unless packet is labeled with UNTRACKED connection
+# tracking label. Generate ICMP Communication Administratively Prohibited
+# (type 3, code 13) when such limit is reached.
+#
+# Next rule implements mail forwarding access policy.
+#
+# Next rule dedicated for Traffic Control (TC) system to classify
+# traffic.
+#
+#   Traffic between customers placed into predefined class for such
+#   communications. Typically this is default class (e.g. 1:0) of
+#   the qdisc attached to the clients output interface, applying
+#   no limits on communications between customers on the same router.
+#
+-A FWD-D2D -m mark --mark 0x7f100000/0xfff00000 -j FWD-RESET
+-A FWD-D2D -m set --match-set fwd-d2d-block-v4 src,dst,dst -j DROP
+-A FWD-D2D -m conntrack ! --ctstate ESTABLISHED,RELATED,UNTRACKED,NEW,DNAT -j DROP
+-A FWD-D2D -m conntrack --ctstate NEW,DNAT -m connlimit --connlimit-above 1024 --connlimit-mask 32 --connlimit-saddr -j REJECT --reject-with icmp-admin-prohibited
+-A FWD-D2D -p tcp -m set --match-set mailports dst -j FWD-MAIL
+-A FWD-D2D -a accept -j CLASSIFY --set-class 1:0
+
+# Forward UPLINK traffic to UPLINK
+# --------------------------------
+#
+# Forward traffic between uplink interfaces without any restrictions.
+#
+# It might happen, when this router is not last on the road to
+# destination. Traffic could be received from uplink interface and
+# send back to the uplink interface, but to different router.
+#
+# First block packets we do not want to forward: this at least useful
+# if no packets received from uplink should be sent back.
+#
+# Next put packets with valid connection tracking label (e.g. UNTRACKED,
+# NEW, ESTABLISHED, etc) into predefined traffic control class since they
+# should not be subject to any traffic control restrictions. Predefined
+# class typically is default class (e.g. 1:0) of the qdisc attached to
+# the output interface.
+#
+# Next drop all packets with invalid connection tracking label.
+#
+-A FWD-U2U -m set --match-set fwd-u2u-block-v4 src,dst,dst -j DROP
+-A FWD-U2U -a accept -m conntrack ! --ctstate INVALID -j CLASSIFY --set-class 1:0
+-A FWD-U2U -j DROP
+
+# FORWARD chain
+# -------------
+#
+# Following flows are permitted:
+#
+#   1. From UPLINK to DOWNLINK
+#   2. From DOWNLINK to UPLINK
+#   3. From DOWNLINK to DOWNLINK
+#   4. From UPLINK to UPLINK
+#
+# Match entries ordered in decreasing of amounts of traffic per
+# specified flow. Moreover it is assument that amount of traffic
+# from UPLINK to DOWNLINK is larger than amount of traffic
+# from DOWNLINK to UPLINK.
+#
+# Traffic flowing from/to other directions is discarded.
+#
+-A FORWARD -m devgroup --src-group 0x1/0xf --dst-group 0x2/0xf -j FWD-U2D
+-A FORWARD -m devgroup --src-group 0x2/0xf --dst-group 0x1/0xf -j FWD-D2U
+-A FORWARD -m devgroup --src-group 0x2/0xf --dst-group 0x2/0xf -j FWD-D2D
+-A FORWARD -m devgroup --src-group 0x1/0xf --dst-group 0x1/0xf -j FWD-U2U
+-A FORWARD -j FWD-RESET
+
+# Output traffic for ESTABLISHED connections
+# ------------------------------------------
+#
+# Interrupt existing and prohibit any further communications with
+# remote node being added to the inp-block-v4 set. This terminates
+# existing connection as fast as local node sends any packet
+# on ESTABLISHED connection to node in inp-block-v4 set, overwise
+# connection will be terminated by the timeout. This is true only
+# for packets going from the existing socket.
+#
+# Accept any other packets for ESTABLISHED connections.
+#
+-A OUT-EST -m owner --socket-exists -m set --match-set inp-block-v4 src,src,dst -j REJECT --reject-with icmp-admin-prohibited
+-A OUT-EST -j ACCEPT
+
+# OUTPOUT chain
+# -------------
+#
+# Following policy applied to outgoing traffic at egress:
+#
+# 1. Do not limit packets going to system loopback (lo)
+#    interface.
+#
+# 2. Output packets for already ESTABLISHED connection and packets
+#    RELATED to the existing connection (like ftp-data channel,
+#    ICMPs).
+#
+# 3. Discard packets, that not initiate NEW connection or UNTRACKED
+#    by CT --notrack target in 'raw' table.
+#
+# 4. Discard packets to foreign destinations from local source addresses
+#    and port/proto, blocked by manually added entry into out-block.
+#
+-A OUTPUT -o lo -j ACCEPT
+-A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j OUT-EST
+-A OUTPUT -m conntrack ! --ctstate NEW,UNTRACKED -j REJECT --reject-with icmp-admin-prohibited
+-A OUTPUT -m set --match-set out-block-v4 src,dst,dst -j REJECT --reject-with icmp-admin-prohibited
+
+COMMIT

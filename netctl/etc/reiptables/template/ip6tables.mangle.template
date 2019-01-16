@@ -1,0 +1,60 @@
+*mangle
+
+:PRE-DIVERT       - [0:0]
+:PREROUTING  ACCEPT [0:0]
+
+:INPUT       ACCEPT [0:0]
+:FORWARD     ACCEPT [0:0]
+:OUTPUT      ACCEPT [0:0]
+:POSTROUTING ACCEPT [0:0]
+
+# Divert non-locally destined packets to local socket
+# ---------------------------------------------------
+#
+# If packet is marked as eligible for divert try to divert packet
+# to local, transparent, listening on ADDR ANY (0.0.0.0 or ::) socket
+# in state NEW.
+#
+# If no such socket exists, mark packet as eligible for discard.
+#
+# 1. If packet belongs to local, transparent socket in ESTABLISHED or
+#    CLOSING state, mark packet as such and accept it.
+#
+# 2. If packet belongs to local, transparent, ADDR ANY socket on TCP
+#    port 80, then divert packet with TPROXY and stop any further
+#    rule processing in this chain.
+#
+# 3. If packet does not match any rules it is marked as eligible for
+#    discard. Packet is accepted in current chain/table.
+#
+# Note that Policy-Based Routing (BPR) rules should exist to complete
+# packet divert to local host.
+#
+-A PRE-DIVERT -a accept -m socket --transparent --state ESTABLISHED,CLOSING -j MARK --and-mark 0xfffe0000
+-A PRE-DIVERT -p tcp -m tcp --dport 80 -m socket --transparent --nowildcard --state NEW --user root --group root -j TPROXY --on-port 80 --on-ip 0100::1 --tproxy-mark 0x00000050/0x0001ffff
+-A PRE-DIVERT -a accept -j MARK --or-mark 0x00010000
+
+# PREROUTING chain
+# ----------------
+#
+# 1. Try to divert packets marked as eligible for divert.
+#    Reuse mark set in 'raw' table.
+#
+-A PREROUTING -m mark --mark 0x7f100000/0xfff10000 -j PRE-DIVERT
+
+# FORWARD chain
+# -------------
+#
+# Mark DNATed packets not going from/to uplink group for future use
+# in POSTROUTING chain "nat" table to SNAT source of DNATed packets.
+#
+# This is needed for correct DNAT behavior (e.g.: host from downlink group
+# connects to DNATed port 80, and DNATed packet would go again to downlink
+# group, where host initiating connection and host for which DNAT is performed
+# may be directly reachable: without SNAT packets from DNATed host to initial
+# host would go directly, and thus dropped because host establish connection
+# with DNATed host).
+#
+-A FORWARD -a accept -m conntrack ! --ctstate UNTRACKED -m devgroup --src-group 0x2/0xf --dst-group 0x2/0xf -j MARK --set-xmark 0x7fff0001/0xffffffff
+
+COMMIT

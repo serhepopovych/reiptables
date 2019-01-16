@@ -1,0 +1,206 @@
+#!/bin/bash
+
+# External tool dependencies, MUST always be defined,
+# even if empty (e.g.: declare -a crt1_request_tools_list=())
+declare -a crt1_request_tools_list=(
+	'iptables-save'		# iptables-save(8)
+	'iptables-restore'	# iptables-restore(8)
+	'ip6tables-save'	# ip6tables-save(8)
+	'ip6tables-restore'	# ip6tables-restore(8)
+	'service'		# service(8)
+	'sed'			# sed(1)
+	'cat'			# cat(1)
+	'mktemp'		# mktemp(1)
+	'unlink'		# unlink(1)
+	'rm'			# rm(1)
+	'sudo'			# sudo(8)
+)
+
+# Source startup code
+. /netctl/lib/bash/crt1.sh
+
+# Source functions libraries
+. /netctl/lib/bash/libbool.sh
+. /netctl/lib/bash/librtti.sh
+. /netctl/lib/bash/libstring.sh
+. /netctl/lib/bash/libfile.sh
+. /netctl/lib/bash/liblog.sh
+. /netctl/lib/bash/libprocess.sh
+
+# Source reconfiguration library
+. /netctl/lib/bash/libreconf.sh
+
+################################################################################
+
+## If not specified in config, set this to default
+
+# local config
+
+[ -n "$REIPTABLES_SYS_SVC_NAME" ] || REIPTABLES_SYS_SVC_NAME='iptables'
+[ -n "$REIP6TABLES_SYS_SVC_NAME" ] || REIP6TABLES_SYS_SVC_NAME='ip6tables'
+
+# v4
+[ -d "$REIPTABLES_DIR" ] || REIPTABLES_DIR="$NCTL_PREFIX/etc/reiptables"
+# v6
+[ -d "$REIP6TABLES_DIR" ] || REIP6TABLES_DIR="$NCTL_PREFIX/etc/reip6tables"
+
+### DO NOT EDIT BELOW THIS LINE ###
+
+## Map table names to filenames
+
+# v4
+declare -a reiptables_tables
+nctl_templ_expand reiptables_tables \
+	"$REIPTABLES_DIR/template/iptables.%s.template" "${REIPTABLES_TABLES[@]}"
+declare -ar reiptables_tables
+declare -ir reiptables_tables_size=${#reiptables_tables[@]}
+
+# v6
+declare -a reip6tables_tables
+nctl_templ_expand reip6tables_tables \
+	"$REIP6TABLES_DIR/template/ip6tables.%s.template" "${REIP6TABLES_TABLES[@]}"
+declare -ar reip6tables_tables
+declare -ir reip6tables_tables_size=${#reip6tables_tables[@]}
+
+## Files to backup corrent rules
+
+# v4
+declare reiptables_save="$NCTL_TMPDIR/reiptables.save.XXXXXXXX"
+
+# v6
+declare reip6tables_save="$NCTL_TMPDIR/reip6tbles.save.XXXXXXXX"
+
+## Prepare sed(1) expressions
+
+declare -a reiptables_sed
+
+nctl_set_val reiptables_sed "${REIPTABLES_SED[@]}"
+
+declare -i reiptables_sed_size=${#reiptables_sed[@]}
+
+for ((i = 0; i < reiptables_sed_size; i++)); do
+	reiptables_sed[$i]="${reiptables_sed[$i]};"
+done
+
+declare -ar reiptables_sed
+
+## Lock subsystem: prevent from running multiple instances
+nctl_subsys_lock
+nctl_check_ok 'FAIL TO RUN "%s" SUBSYSTEM EXCLUSIVELY\n' "$NCTL_SUBSYS_NAME"
+
+__restore_original_files=n
+exit_handler()
+{
+	# revert before exit on failure
+	if ! nctl_is_no "$__restore_original_files"; then
+		echo '** Restoring original configuration **'
+
+		# restore rules
+		sudo iptables-restore <"$reiptables_save" ||
+			nctl_inc_rc nctl_rc
+		sudo ip6tables-restore <"$reip6tables_save" ||
+			nctl_inc_rc nctl_rc
+	fi
+
+	# Remove backups
+	rm -f "$reiptables_save" "$reip6tables_save" ||
+		nctl_inc_rc nctl_rc
+
+	# Report end
+	nctl_end_msg
+
+	## Unlock subsystem
+	nctl_subsys_unlock ||
+		nctl_inc_rc nctl_rc
+
+	exit $nctl_rc
+}
+trap 'exit_handler 2>&1 |nctl_log_pipe' EXIT
+
+# Usage: reiptables <iptables> <tables_list> ...
+reiptables()
+{
+	local iptables="${1:?missing 1st argument to function \"$FUNCNAME\" (iptables)}"
+	local iptables_restore
+	local iptables_file_tmp
+	local f
+
+	shift
+	[ $# -gt 0 ] || return
+
+	case "$iptables" in
+		[Ii][Pp][Tt][Aa][Bb][Ll][Ee][Ss])
+			iptables_restore='iptables-restore'
+			;;
+		[Ii][Pp]6[Tt][Aa][Bb][Ll][Ee][Ss])
+			iptables_restore='ip6tables-restore'
+			;;
+		*)
+			nctl_log_msg 'Unsupported tables type: %s\n' \
+				"$iptables"
+			return 1
+			;;
+	esac
+
+	# Loading rules
+	nctl_log_msg 'Loading rules using "%s"\n' "$iptables"
+
+	nctl_absolute "$iptables_restore" 'iptables_restore' || return
+
+	iptables_file_tmp="$NCTL_TMPDIR/$iptables.new.XXXXXXXX"
+	iptables_file_tmp="$(mktemp "$iptables_file_tmp")" || return
+	trap 'unlink "$iptables_file_tmp"' RETURN
+
+	for f in "$@"; do
+		cat "$f" || return
+		# end each file with \n
+		echo
+	done >"$iptables_file_tmp"
+
+	# substitude patterns
+	sed -E -e "${reiptables_sed[*]}" \
+		-i "$iptables_file_tmp" || return
+
+	# actually load rules
+	sudo "$iptables_restore" <"$iptables_file_tmp"
+}
+
+# Report start
+nctl_begin_msg
+
+# Make backup of the original file(s) if needed
+nctl_log_msg 'Backup original configuration\n'
+reiptables_save="$(mktemp "$reiptables_save")"
+reip6tables_save="$(mktemp "$reip6tables_save")"
+{
+	sudo iptables-save >"$reiptables_save"
+	sudo ip6tables-save >"$reip6tables_save"
+} 2>&1 |nctl_log_pipe
+nctl_check_ok 'ERRORS WHEN BACKUP FILES\n'
+__restore_original_files=y
+
+# Adjust iptables rules in kernel
+reiptables 'iptables' "${reiptables_tables[@]}" 2>&1 |nctl_log_pipe
+nctl_check_ok 'ERRORS WHEN LOADING IPTABLES RULES\n'
+
+reiptables 'ip6tables' "${reip6tables_tables[@]}" 2>&1 |nctl_log_pipe
+nctl_check_ok 'ERRORS WHEN LOADING IP6TABLES RULES\n'
+
+# Save updated rules
+nctl_log_msg 'Save updated rules using "%s" service\n' "$REIPTABLES_SYS_SVC_NAME"
+{
+	echo -n "$REIPTABLES_SYS_SVC_NAME: "
+	sudo service "$REIPTABLES_SYS_SVC_NAME" save
+} 2>&1 |nctl_log_pipe
+nctl_check_ok 'ERRORS ON SAVING UPDATED RULES\n'
+
+nctl_log_msg 'Save updated rules using "%s" service\n' "$REIP6TABLES_SYS_SVC_NAME"
+{
+	echo -n "$REIP6TABLES_SYS_SVC_NAME: "
+	sudo service "$REIP6TABLES_SYS_SVC_NAME" save
+} 2>&1 |nctl_log_pipe
+nctl_check_ok 'ERRORS ON SAVING UPDATED RULES\n'
+
+__restore_original_files=n
+
+exit $nctl_rc
