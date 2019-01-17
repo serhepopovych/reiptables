@@ -1,5 +1,8 @@
 #!/bin/bash
 
+# Re-exec itself as given user
+NCTL_RUNAS='reconfigure'
+
 # External tool dependencies, MUST always be defined,
 # even if empty (e.g.: declare -a crt1_request_tools_list=())
 declare -a crt1_request_tools_list=(
