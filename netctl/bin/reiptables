@@ -14,7 +14,6 @@ declare -a crt1_request_tools_list=(
 	'sed'			# sed(1)
 	'cat'			# cat(1)
 	'mktemp'		# mktemp(1)
-	'unlink'		# unlink(1)
 	'rm'			# rm(1)
 	'sudo'			# sudo(8)
 )
@@ -152,7 +151,7 @@ reiptables()
 
 	iptables_file_tmp="$NCTL_TMPDIR/$iptables.new.XXXXXXXX"
 	iptables_file_tmp="$(mktemp "$iptables_file_tmp")" || return
-	trap 'unlink "$iptables_file_tmp"' RETURN
+	trap 'rm -f "$iptables_file_tmp"' RETURN
 
 	for f in "$@"; do
 		cat "$f" || return
