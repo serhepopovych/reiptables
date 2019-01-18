@@ -43,8 +43,8 @@ there is concept of zones (groups):
   management - connection to management network(s)
   sink       - blackhole egress packets, no ingress
 
-By default connection tracking on for all (including transit) traffic
-coming to or originating from the box.
+By default connection tracking and packet defragmentation performed for
+all (including transit) traffic coming to or originating from the box.
 
 To track thousands of connections hash tables are used that in case of
 multiple src,dst tuples can make hash tables very large negatively
@@ -53,3 +53,8 @@ tracking entries allowed in network namespace controlled with
 net/nf_conntrack_max sysctl parameter. There are additional sysctl
 settings that control timeout for entries that can be used to kick
 outdated ones earlier.
+
+Since defragmenting transit traffic often undesirable for end-to-end
+communications as well as have negative impact on performance support
+for annotating selected traffic as UNTRACKED is added to this
+implementation.
