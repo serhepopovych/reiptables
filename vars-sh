@@ -1,0 +1,3 @@
+
+# Inherit subproject(s) variables
+inherit 'reipset/vars-sh'

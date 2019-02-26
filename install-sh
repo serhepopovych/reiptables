@@ -1,0 +1,14 @@
+#!/bin/sh -e
+
+# Requires: useradd(8), userdel(8), usermod(8)
+
+## Adjust filesystem ownership and permissions
+
+[ "$EUID" != 0 ] && owner='' || owner='root:root'
+
+# $ROOT/etc/sudoers.d/10-netctl-reiptables
+adj_rights "$owner" 0440 "$ROOT/etc/sudoers.d/10-netctl-reiptables"
+
+[ "$EUID" != 0 ] || owner="root:$RECONFIGURE_GROUP"
+
+return 0
