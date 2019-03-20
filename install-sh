@@ -1,14 +1,54 @@
 #!/bin/sh -e
 
-# Requires: useradd(8), userdel(8), usermod(8)
+sysconfig_dir="$ROOT/etc"
+if [ ! -d "$sysconfig_dir" ]; then
+	[ ! -e "$sysconfig_dir" ] || exit 0
+	# Try to remove if broken symlink.
+	[ ! -L "$sysconfig_dir" ] || rm -f "$sysconfig_dir" || exit 0
+	mkdir -p "$sysconfig_dir"
+fi
+
+## /etc/modules
+
+f="$sysconfig_dir/modules"
+if prepare_file "$f"; then
+	begin_header "$f"
+
+	cat >>"$f" <<'_EOF'
+
+# conntrack
+nf_conntrack_amanda
+nf_conntrack_ftp
+nf_conntrack_h323
+nf_conntrack_irc
+nf_conntrack_pptp
+nf_conntrack_sip
+nf_conntrack_snmp
+nf_conntrack_tftp
+
+nf_conntrack_netbios_ns
+nf_conntrack_sane
+
+# nat
+nf_nat_amanda
+nf_nat_ftp
+nf_nat_h323
+nf_nat_irc
+nf_nat_pptp
+nf_nat_sip
+nf_nat_snmp_basic
+nf_nat_tftp
+
+_EOF
+
+	end_header "$f"
+fi
 
 ## Adjust filesystem ownership and permissions
 
-[ "$EUID" != 0 ] && owner='' || owner='root:root'
-
 # $ROOT/etc/sudoers.d/10-netctl-reiptables
-adj_rights "$owner" 0440 "$ROOT/etc/sudoers.d/10-netctl-reiptables"
+adj_rights '' 0440 "$ROOT/etc/sudoers.d/10-netctl-reiptables"
 
-[ "$EUID" != 0 ] || owner="root:$RECONFIGURE_GROUP"
+[ "$INSTALL_EUID" != 0 ] && owner='' || owner="root:$RECONFIGURE_GROUP"
 
 return 0
