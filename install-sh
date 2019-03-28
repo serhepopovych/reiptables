@@ -1,12 +1,6 @@
 #!/bin/sh -e
 
 sysconfig_dir="$ROOT/etc"
-if [ ! -d "$sysconfig_dir" ]; then
-	[ ! -e "$sysconfig_dir" ] || exit 0
-	# Try to remove if broken symlink.
-	[ ! -L "$sysconfig_dir" ] || rm -f "$sysconfig_dir" || exit 0
-	mkdir -p "$sysconfig_dir"
-fi
 
 ## /etc/modules
 
