@@ -1,6 +1,6 @@
 
 # Members of @reconfigure_group@ group allowed to execute following commands:
-%@reconfigure_group@	ALL = (root:root)        NOEXEC,NOPASSWD: /sbin/iptables-save
-%@reconfigure_group@	ALL = (root:root)        NOEXEC,NOPASSWD: /sbin/iptables-restore
-%@reconfigure_group@	ALL = (root:root)        NOEXEC,NOPASSWD: /sbin/ip6tables-save
-%@reconfigure_group@	ALL = (root:root)        NOEXEC,NOPASSWD: /sbin/ip6tables-restore
+%@reconfigure_group@	ALL = (root:root)        NOEXEC,NOPASSWD: /usr/sbin/iptables-save, /sbin/iptables-save
+%@reconfigure_group@	ALL = (root:root)        NOEXEC,NOPASSWD: /usr/sbin/iptables-restore, /sbin/iptables-restore
+%@reconfigure_group@	ALL = (root:root)        NOEXEC,NOPASSWD: /usr/sbin/ip6tables-save, /sbin/ip6tables-save
+%@reconfigure_group@	ALL = (root:root)        NOEXEC,NOPASSWD: /usr/sbin/ip6tables-restore, /sbin/ip6tables-restore
