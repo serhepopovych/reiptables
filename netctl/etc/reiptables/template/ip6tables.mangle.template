@@ -31,7 +31,7 @@
 # packet divert to local host.
 #
 -A PRE-DIVERT -a accept -m socket --transparent --state ESTABLISHED,CLOSING -j MARK --and-mark 0xfffe0000
--A PRE-DIVERT -p tcp -m tcp --dport 80 -m socket --transparent --nowildcard --state NEW --user root --group root -j TPROXY --on-port 80 --on-ip 0100::1 --tproxy-mark 0x00000050/0x0001ffff
+-A PRE-DIVERT -p tcp --dport 80 -m socket --transparent --nowildcard --state NEW --user root --group root -j TPROXY --on-port 80 --on-ip 0100::1 --tproxy-mark 0x00000050/0x0001ffff
 -A PRE-DIVERT -a accept -j MARK --or-mark 0x00010000
 
 # PREROUTING chain

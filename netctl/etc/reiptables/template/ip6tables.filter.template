@@ -173,7 +173,7 @@
 -A FWD-MAIL -m set --match-set mail-spammers-v6 src -j REJECT --reject-with icmp6-adm-prohibited
 -A FWD-MAIL -m set --match-set mail-smtp-v6 src -j RETURN
 -A FWD-MAIL -m set --match-set mail-smtp-v6 dst -j RETURN
--A FWD-MAIL -p tcp -m tcp ! --dport 25 -m set --match-set mail-smtps-v6 src -j RETURN
+-A FWD-MAIL -p tcp ! --dport 25 -m set --match-set mail-smtps-v6 src -j RETURN
 -A FWD-MAIL -j REJECT --reject-with icmp6-adm-prohibited
 
 # Forward UPLINK traffic to DOWNLINK
