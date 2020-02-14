@@ -44,12 +44,21 @@
 # Packets accepted in this chain are connection tracked, and thus may be
 # refragmented by nf_defrag_ipv6 if needed, before matching socket.
 #
-# 1. If packet sent to tcp port 80, then mark packet for divert and accept it.
+# 1. Mark packet for divert and annotate it with discard eligibility bit.
+#    Further rules must clear this bit to make it accepted later on input.
 #
-# 2. Mark other packets as eligible for discard.
+# 2. Clear discard bit for ICMPs since they could be matched to socket in
+#    established state later.
 #
--A PRE-DIVERT -a accept -p tcp --dport 80 -j MARK --set-mark 0x7f100050/0xffffffff
--A PRE-DIVERT -j MARK --set-mark 0x7f110000/0xffffffff
+# 3. Clear discard bit for rate-limited per source TCP packets to 80 port.
+#
+# 4. Accept for connection tracking all packets for discard bit cleared.
+#    Return to the caller chain that may set packet as untracked.
+#
+-A PRE-DIVERT -j MARK --set-xmark 0x7f110000/0xffffffff
+-A PRE-DIVERT -p icmp -j MARK --set-xmark 0x00000/0x3ffff
+-A PRE-DIVERT -p tcp -m tcp --dport 80 -m hashlimit --hashlimit-upto 25/min --hashlimit-burst 5 --hashlimit-mode srcip --hashlimit-name PRE-DIVERT-HTTP --hashlimit-htable-size 16384 --hashlimit-htable-gcinterval 30000 -j MARK --set-xmark 0x00050/0x3ffff
+-A PRE-DIVERT -m mark --mark 0x0/0x10000 -j ACCEPT
 
 # Input packets destined locally
 # ------------------------------

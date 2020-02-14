@@ -42,27 +42,6 @@
 -A INP-RESET -p udp -j REJECT --reject-with icmp6-port-unreachable
 -A INP-RESET -j DROP
 
-# Input diverted packets
-# -----------------------
-#
-# Mark is done in 'raw' and 'mangle 'table. Packet routed locally using PBR
-# (see ip-rule(8) for more information) and fwmark value.
-#
-# See 'raw' and 'mangle' table configuration for more information.
-#
-# Note that packets for already established connection, matched using
-# conntrack as done for any locally delivered packets.
-#
-# 1. Allow packets for initial connection to input. Limit packet
-#    rate if needed. As source address mode is used and such address
-#    validated before (i.e. no address spoofing) we can safely
-#    keep relatively small hash table size and large gc interval.
-#
-# 2. Discard packet.
-#
--A INP-DIVERT -m mark --mark 0x7f100050/0xfff1ffff -m hashlimit --hashlimit-upto 25/min --hashlimit-burst 5 --hashlimit-mode srcip --hashlimit-name INP-DIVERT-HTTP --hashlimit-htable-size 16384 --hashlimit-htable-gcinterval 30000 -j ACCEPT
--A INP-DIVERT -j INP-RESET
-
 # Add entry to temporary block list from other rules
 # --------------------------------------------------
 #
@@ -109,36 +88,41 @@
 #
 # Following policy applied incoming traffic at ingress:
 #
-# 1. Do not limit packets coming from system loopback (lo)
-#    interface.
+# 1. Do not restrict packets coming from system loopback (lo) interface.
 #
-# 2. Discard packets from foreign source to local destination address
-#    and port/proto, blocked by manually added entry into inp-block-v6 set
+# 2. Discard diverted packets with discard bit set before checking
+#    their connection tracking state. This normally should never happen
+#    as Policy-Based Routing (PBR) rule should only divert packets with
+#    discard bit cleared.
+#
+# 3. Discard packets to local destination address and port/proto from
+#    source network/address. Blocked entry in inp-block-v4 set manually
 #    or automatically by ratelimiting rules.
 #
-# 3. Accept packets for already ESTABLISHED connection and packets
+# 4. Accept packets for already ESTABLISHED connection and packets
 #    RELATED to the existing connection (like ftp-data channel,
 #    ICMPs).
 #
-# 4. Discard packets, that not initiate NEW connection or UNTRACKED
+# 5. Discard packets, that not initiate NEW connection or UNTRACKED
 #    by CT --notrack target in 'raw' table.
 #
-# 5. Input diverted packets. See below description for chain DIVERT.
+# 6. Accept diverted packets. See 'raw' and 'mangle' tables for details.
 #
-# 6. Discard packets not going to allowed destination address and port
+# 7. Discard packets not going to allowed destination address and port
 #    from allowed foreign source.
 #
-# 7. Apply ratelimiting rules for packets destined locally to
+# 8. Apply ratelimiting rules for packets destined locally to
 #    given address and port from specified foregin source address.
 #
-# 8. Accept packets, which are not subject for ratelimiting rules by
-#    chain policy.
+# Finally accept packets, which are not subject for ratelimiting rules by
+# chain policy.
 #
 -A INPUT -i lo -j ACCEPT
+-A INPUT -m mark --mark 0x7f110000/0xfff10000 -j INP-RESET
 -A INPUT -m set --match-set inp-block-v6 dst,dst,src -j INP-RESET
 -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
 -A INPUT -m conntrack ! --ctstate NEW,UNTRACKED -j INP-RESET
--A INPUT -m mark --mark 0x7f100000/0xfff00000 -j INP-DIVERT
+-A INPUT -m mark --mark 0x7f100000/0xfff00000 -j ACCEPT
 -A INPUT -m set ! --match-set inp-allow-v6 dst,dst,src -j INP-RESET
 -A INPUT -m set --match-set inp-ratelimit-v6 dst,dst,src -j INP-RATE
 

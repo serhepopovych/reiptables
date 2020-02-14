@@ -11,28 +11,35 @@
 # Divert non-locally destined packets to local socket
 # ---------------------------------------------------
 #
-# If packet is marked as eligible for divert try to divert packet
-# to local, transparent, listening on ADDR ANY (0.0.0.0 or ::) socket
-# in state NEW.
+# 1. Set discard bit on packet to catch misconfigurations (e.g. missing
+#    Policy-Base Routing (PBR) rules configuration later in forwarding
+#    path) or packets (e.g. ICMPs) that aren't belong to socket in
+#    established state.
 #
-# If no such socket exists, mark packet as eligible for discard.
+# 2. If transparent, non-wildcard (i.e. in ESTABLISHED or CLOSING state)
+#    socket is found for src/dst and addr/port tuples from packet, clear
+#    discard bit and divert id to annotate that packet belongs to socket
+#    in established state.
 #
-# 1. If packet belongs to local, transparent socket in ESTABLISHED or
-#    CLOSING state, mark packet as such and accept it.
+# 3. Accept packet if condition described in (2) satisfied.
 #
-# 2. If packet belongs to local, transparent, ADDR ANY socket on TCP
-#    port 80, then divert packet with TPROXY and stop any further
-#    rule processing in this chain.
+# 4. If packet marked for divert correctly TPROXY it to socket. Clear
+#    discard bit as packet might be initiating new connection.
 #
-# 3. If packet does not match any rules it is marked as eligible for
-#    discard. Packet is accepted in current chain/table.
+# Note that packets with discard bit set here will have connection
+# tracking enabled on them and therefore could be matched later with
+# -m conntrack. That could be used to accept packets that otherwise
+# should be discarded. For example accept spoofed ICMP packets to
+# established connections to take control on them.
 #
-# Note that Policy-Based Routing (BPR) rules should exist to complete
-# packet divert to local host.
+# To prevent such packets from being accepted discard eligibility bit
+# should be considered and corresponding action applied if needed prior
+# to matching connection tracking state.
 #
--A PRE-DIVERT -a accept -m socket --transparent --state ESTABLISHED,CLOSING -j MARK --and-mark 0xfffe0000
--A PRE-DIVERT -p tcp --dport 80 -m socket --transparent --nowildcard --state NEW --user root --group root -j TPROXY --on-port 80 --on-ip 192.0.2.1 --tproxy-mark 0x00000050/0x0001ffff
--A PRE-DIVERT -a accept -j MARK --or-mark 0x00010000
+-A PRE-DIVERT -j MARK --set-xmark 0x10000/0x10000
+-A PRE-DIVERT -m socket --transparent -j MARK --set-xmark 0x0/0x1ffff
+-A PRE-DIVERT -m mark --mark 0x0/0x10000 -j ACCEPT
+-A PRE-DIVERT -p tcp -m mark --mark 0x50/0x2ffff -j TPROXY --on-port 80 --on-ip 192.0.2.1 --tproxy-mark 0x0/0x10000
 
 # PREROUTING chain
 # ----------------
@@ -42,9 +49,8 @@
 #
 -A PREROUTING -m mark --mark 0x7f100000/0xfff10000 -j PRE-DIVERT
 
-# Mangle forwarded packets
 # FORWARD chain
-# ------------------------
+# -------------
 #
 # Mark DNATed packets not going from/to uplink group for future use
 # in POSTROUTING chain "nat" table to SNAT source of DNATed packets.
