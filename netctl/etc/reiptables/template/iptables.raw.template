@@ -14,11 +14,11 @@
 #
 # Mark is 32-bit integer, has following format:
 #
-#                 19 16
-#  +--------+----+---+-+--------+--------+
-#  |      0x7f1  |000|D|    divert id    |
-#  +--------+----+---+-+--------+--------+
-#   31         20       15     8 7      0
+#                 19  16
+#  +--------+----+--+-+-+--------+--------+
+#  |      0x7f1  |00|T|D|    divert id    |
+#  +--------+----+--+-+-+--------+--------+
+#   31         20   17  15     8 7      0
 #
 # Bits from 0 to 15 denotes id of the divert, used to apply custom rules to
 # each divert (e.g.: to ratelimit incoming connections to socket, etc).
@@ -32,7 +32,10 @@
 # diverted and packets, that should be discarded in forwarding path
 # (see FORWARD chain setup in filter table).
 #
-# Bits from 17 to 19 are reserved and should be zero. Rules should not
+# Bit 17 is (T)ype bit. It is set to declare that protocol whose port
+# number is stored in divert id field is UDP. Otherwise it is TCP.
+#
+# Bits from 18 to 19 are reserved and should be zero. Rules should not
 # inspect these bits.
 #
 # Bits from 20 to 31 denotes "prefix" of divert mark, used to distinguish
