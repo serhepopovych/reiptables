@@ -74,8 +74,8 @@
 # 4. Accept packet. Suppress connection tracking if packet's source/destination
 #    matches pre-fwd-notrack-v4 set. This affects packet defragmentation process:
 #
-#      untracked packets not defragmented by nf_defrag_ipv4 if no_defrag_untracked
-#      parameter is set.
+#      untracked packets not defragmented by nf_defrag_ipv4 if raw_before_defrag
+#      parameter of iptables_raw module is set.
 #
 -A PREROUTING -m devgroup ! --src-group 0x1/0xf -m rpfilter --invert -m set ! --match-set pre-skip-uRPF-v4 src -j DROP
 -A PREROUTING -m addrtype --dst-type LOCAL -j PRE-LOCAL
