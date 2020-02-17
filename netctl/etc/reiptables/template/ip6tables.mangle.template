@@ -39,7 +39,7 @@
 -A PRE-DIVERT -j MARK --set-xmark 0x10000/0x10000
 -A PRE-DIVERT -m socket --transparent -j MARK --set-xmark 0x0/0x1ffff
 -A PRE-DIVERT -m mark --mark 0x0/0x10000 -j ACCEPT
--A PRE-DIVERT -p tcp -m mark --mark 0x50/0x2ffff -j TPROXY --on-port 80 --on-ip 192.0.2.1 --tproxy-mark 0x0/0x10000
+-A PRE-DIVERT -p tcp -m mark --mark 0x50/0x2ffff -j TPROXY --on-port 80 --on-ip 100::1 --tproxy-mark 0x0/0x10000
 
 # PREROUTING chain
 # ----------------
