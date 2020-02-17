@@ -231,7 +231,8 @@
 #-A FWD-U2D -a accept -i %LO_IF% -j CLASSIFY --set-xclass 0x10000/0xffff8000
 #-A FWD-U2D -a accept -m realm --realm 0x00080000/0xffff0000 -j CLASSIFY --set-xclass 0x10000/0xffff4000
 #-A FWD-U2D -a accept -m realm --realm 0x00040000/0xffff0000 -j CLASSIFY --set-xclass 0x10000/0xffff8000
--A FWD-U2D -a accept -j CLASSIFY --set-xclass 0x10000/0xffffc000
+#-A FWD-U2D -a accept -j CLASSIFY --set-xclass 0x10000/0xffffc000
+-A FWD-U2D -j ACCEPT
 
 # Forward DOWNLINK traffic to UPLINK
 # ----------------------------------
@@ -277,7 +278,8 @@
 -A FWD-D2U -j SET --map-set fwd-d2u-classify-v4 src --map-prio
 #-A FWD-D2U -a accept -m realm --realm 0x0008/0xffff -j CLASSIFY --set-xclass 0x10000/0xffff4000
 #-A FWD-D2U -a accept -m realm --realm 0x0004/0xffff -j CLASSIFY --set-xclass 0x10000/0xffff8000
--A FWD-D2U -a accept -j CLASSIFY --set-xclass 0x10000/0xffffc000
+#-A FWD-D2U -a accept -j CLASSIFY --set-xclass 0x10000/0xffffc000
+-A FWD-D2U -j ACCEPT
 
 # Forward DOWNLINK traffic to DOWNLINK
 # ------------------------------------
