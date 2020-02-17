@@ -69,7 +69,8 @@
 # 2. Suppress connection tracking and accept packet.
 #
 -A PRE-LOCAL ! -i lo -m set ! --match-set pre-inp-notrack-v4 dst,dst,src -j ACCEPT
--A PRE-LOCAL -a accept -j CT --notrack
+-A PRE-LOCAL -j CT --notrack
+-A PRE-LOCAL -j ACCEPT
 
 # PREROUTING chain
 # ----------------
@@ -92,7 +93,7 @@
 -A PREROUTING -m devgroup ! --src-group 0x1/0xf -m rpfilter --invert -m set ! --match-set pre-skip-uRPF-v4 src -j DROP
 -A PREROUTING -m addrtype --dst-type LOCAL -j PRE-LOCAL
 -A PREROUTING -m devgroup --src-group 0x2/0xf -m set --match-set pre-block-v4 src -m set ! --match-set pre-allow4blk-v4 dst -j PRE-DIVERT
--A PREROUTING -a accept -m set --match-set pre-fwd-notrack-v4 src,dst -j CT --notrack
+-A PREROUTING -m set --match-set pre-fwd-notrack-v4 src,dst -j CT --notrack
 
 # OUTPUT chain
 # ------------
@@ -103,6 +104,6 @@
 # 2. Suppress connection tracking and accept packet.
 #
 -A OUTPUT ! -o lo -m set ! --match-set out-notrack-v4 src,src,dst -j ACCEPT
--A OUTPUT -a accept -j CT --notrack
+-A OUTPUT -j CT --notrack
 
 COMMIT

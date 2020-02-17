@@ -52,16 +52,8 @@
 # FORWARD chain
 # -------------
 #
-# Mark DNATed packets not going from/to uplink group for future use
-# in POSTROUTING chain "nat" table to SNAT source of DNATed packets.
+# Mark conntracked packets forwarded between downlinks for future use.
 #
-# This is needed for correct DNAT behavior (e.g.: host from downlink group
-# connects to DNATed port 80, and DNATed packet would go again to downlink
-# group, where host initiating connection and host for which DNAT is performed
-# may be directly reachable: without SNAT packets from DNATed host to initial
-# host would go directly, and thus dropped because host establish connection
-# with DNATed host).
-#
--A FORWARD -a accept -m conntrack ! --ctstate UNTRACKED -m devgroup --src-group 0x2/0xf --dst-group 0x2/0xf -j MARK --set-xmark 0x7fff0001/0xffffffff
+-A FORWARD -m conntrack ! --ctstate UNTRACKED -m devgroup --src-group 0x2/0xf --dst-group 0x2/0xf -j MARK --set-xmark 0x7fff0001/0xffffffff
 
 COMMIT

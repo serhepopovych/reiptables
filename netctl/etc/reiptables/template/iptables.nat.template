@@ -12,16 +12,22 @@
 #
 # 1. Allow locally originated packets to pass without SNAT.
 #
-# 2. Use MASQUERADE to SNAT all packets going to uplink. Accept packet.
+# 2. Use MASQUERADE to SNAT all packets going to uplink.
 #
 # 3. MASQUERADE all packets going from downlink to downlink
-#    if they belongs to DNATed connection. Accept packet.
+#    if they belongs to DNATed connection.
+#
+#    This is needed for correct DNAT behavior when for example host from network
+#    in downlink group connects to DNATed port 80, and packet would go to the
+#    same network, where both hosts directly reachable: without SNAT packets from
+#    DNATed host to initial host might go directly, and thus dropped because host
+#    knowns nothing about them.
 #
 # Use MASQUERADE as it does not require source address to SNAT,
 # permitting to create generic rules.
 #
 -A POSTROUTING -m addrtype --src-type LOCAL -j ACCEPT
--A POSTROUTING -a accept -m devgroup --dst-group 0x1/0xf -j MASQUERADE
--A POSTROUTING -a accept -m mark --mark 0x7fff0001/0xffffffff -m conntrack --ctstate DNAT -j MASQUERADE
+-A POSTROUTING -m devgroup --dst-group 0x1/0xf -j MASQUERADE
+-A POSTROUTING -m mark --mark 0x7fff0001/0xffffffff -m conntrack --ctstate DNAT -j MASQUERADE
 
 COMMIT

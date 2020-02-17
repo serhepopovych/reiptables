@@ -309,7 +309,8 @@
 -A FWD-D2D -m conntrack ! --ctstate ESTABLISHED,RELATED,UNTRACKED,NEW,DNAT -j DROP
 -A FWD-D2D -m conntrack --ctstate NEW,DNAT -m connlimit --connlimit-above 1024 --connlimit-mask 128 --connlimit-saddr -j REJECT --reject-with icmp6-adm-prohibited
 -A FWD-D2D -p tcp -m set --match-set mailports dst -j FWD-MAIL
--A FWD-D2D -a accept -j CLASSIFY --set-class 1:0
+-A FWD-D2D -j CLASSIFY --set-class 1:0
+-A FWD-D2D -j ACCEPT
 
 # Forward UPLINK traffic to UPLINK
 # --------------------------------
@@ -331,8 +332,9 @@
 #
 # Next drop all packets with invalid connection tracking label.
 #
--A FWD-U2U -m set --match-set fwd-u2u-block-v6 src,dst,dst -j DROP
--A FWD-U2U -a accept -m conntrack ! --ctstate INVALID -j CLASSIFY --set-class 1:0
+#-A FWD-U2U -m set --match-set fwd-u2u-block-v6 src,dst,dst -j DROP
+#-A FWD-U2U -m conntrack ! --ctstate INVALID -j CLASSIFY --set-class 1:0
+#-A FWD-U2U -j ACCEPT
 -A FWD-U2U -j DROP
 
 # FORWARD chain
