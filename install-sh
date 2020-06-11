@@ -36,12 +36,19 @@ nf_nat_tftp
 _EOF
 
 	end_header "$f"
+
+	# CentOS/RHEL 7+ does not have /etc/modules
+	t="$sysconfig_dir/modules-load.d"
+	if [ -d "$t" ] && t="$t/modules.conf" && [ ! "$f" -ef "$t" ]; then
+		relative_path "$f" "$t" f
+		ln -sf "$f" "$t"
+	fi
 fi
 
 ## Adjust filesystem ownership and permissions
 
 # $ROOT/etc/sudoers.d/10-netctl-reiptables
-adj_rights '' 0440 "$ROOT/etc/sudoers.d/10-netctl-reiptables"
+adj_rights '' 0440 "$sysconfig_dir/sudoers.d/10-netctl-reiptables"
 
 [ "$INSTALL_EUID" != 0 ] && owner='' || owner="root:$RECONFIGURE_GROUP"
 
