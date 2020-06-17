@@ -387,15 +387,11 @@
 #    RELATED to the existing connection (like ftp-data channel,
 #    ICMPs).
 #
-# 3. Discard packets, that not initiate NEW connection or UNTRACKED
-#    by CT --notrack target in 'raw' table.
-#
-# 4. Discard packets to foreign destinations from local source addresses
+# 3. Discard packets to foreign destinations from local source addresses
 #    and port/proto, blocked by manually added entry into out-block.
 #
 -A OUTPUT -o lo -j ACCEPT
 -A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j OUT-EST
--A OUTPUT -m conntrack ! --ctstate NEW,UNTRACKED -j REJECT --reject-with icmp6-adm-prohibited
 -A OUTPUT -m set --match-set out-block-v6 src,dst,dst -j REJECT --reject-with icmp6-adm-prohibited
 
 COMMIT
