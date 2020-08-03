@@ -1,3 +1,6 @@
 [submodule ".subprojects/reipset"]
 	path = .subprojects/reipset
 	url = https://github.com/serhepopovych/reipset.git
+[submodule ".subprojects/libusrxml"]
+	path = .subprojects/libusrxml
+	url = https://github.com/serhepopovych/libusrxml.git

@@ -11,8 +11,10 @@ declare -a crt1_request_tools_list=(
 	'ip6tables-save'	# ip6tables-save(8)
 	'ip6tables-restore'	# ip6tables-restore(8)
 	'service'		# service(8)
+	'gawk'			# gawk(1)
 	'sed'			# sed(1)
 	'cat'			# cat(1)
+	'ln'			# ln(1)
 	'mktemp'		# mktemp(1)
 	'rm'			# rm(1)
 	'sudo'			# sudo(8)
@@ -34,6 +36,18 @@ declare -a crt1_request_tools_list=(
 
 ################################################################################
 
+# Source reipset configuration
+nctl_SourceIfNotEmpty "$NCTL_PREFIX/etc/reipset.conf"
+
+## If not specified in config, set this to default
+
+[ -x "$REIPSET" ] || REIPSET="$NCTL_PREFIX/bin/reipset"
+
+[ -d "$REIPSET_DIR" ] || REIPSET_DIR="$NCTL_PREFIX/etc/reipset"
+[ -d "$REIPSET_DATADIR" ] || REIPSET_DATADIR="$REIPSET_DIR/data"
+
+[ -n "$USR_XML" ] || USR_XML="$NCTL_PREFIX/etc/usr.xml"
+
 ## If not specified in config, set this to default
 
 # local config
@@ -43,8 +57,11 @@ declare -a crt1_request_tools_list=(
 
 # v4
 [ -d "$REIPTABLES_DIR" ] || REIPTABLES_DIR="$NCTL_PREFIX/etc/reiptables"
+[ -d "$REIPTABLES_DATADIR" ] || REIPTABLES_DATADIR="$REIPTABLES_DIR/data"
+
 # v6
 [ -d "$REIP6TABLES_DIR" ] || REIP6TABLES_DIR="$NCTL_PREFIX/etc/reip6tables"
+[ -d "$REIP6TABLES_DATADIR" ] || REIP6TABLES_DATADIR="$REIP6TABLES_DIR/data"
 
 ### DO NOT EDIT BELOW THIS LINE ###
 
@@ -70,7 +87,7 @@ declare -ir reip6tables_tables_size=${#reip6tables_tables[@]}
 declare reiptables_save="$NCTL_TMPDIR/reiptables.save.XXXXXXXX"
 
 # v6
-declare reip6tables_save="$NCTL_TMPDIR/reip6tbles.save.XXXXXXXX"
+declare reip6tables_save="$NCTL_TMPDIR/reip6tables.save.XXXXXXXX"
 
 ## Prepare sed(1) expressions
 
@@ -81,7 +98,7 @@ nctl_set_val reiptables_sed "${REIPTABLES_SED[@]}"
 declare -i reiptables_sed_size=${#reiptables_sed[@]}
 
 for ((i = 0; i < reiptables_sed_size; i++)); do
-	reiptables_sed[$i]="${reiptables_sed[$i]};"
+	eval "reiptables_sed[\$i]=\"-e ${reiptables_sed[$i]}\""
 done
 
 declare -ar reiptables_sed
@@ -90,12 +107,76 @@ declare -ar reiptables_sed
 nctl_subsys_lock
 nctl_check_ok 'FAIL TO RUN "%s" SUBSYSTEM EXCLUSIVELY\n' "$NCTL_SUBSYS_NAME"
 
+# Usage: reiptables_ipset
+reiptables_ipset()
+{
+	local -i i
+	local -i rc=0
+	local set_name set_file
+	local reiptables_file reipset_file
+	local reipset_sets=''
+
+	# Installing new set rules file should be made atomically
+	# as reipset might be in progress and get inconsistent data.
+	#
+	# This means we should not use cp(1), install(1) or any
+	# other copy procedure, which creates new file and writes
+	# data to it. We should use operations that adds/replaces
+	# target directory entry while contents of the file remains
+	# unchanged.
+	#
+	# An example of such filesystem operations is mv(1).
+
+	for set_name in "$SNAT4_IPSET" "$SNAT6_IPSET"; do
+		set_file="$set_name.rules"
+
+		reiptables_file="$REIPTABLES_DATADIR/usrxml/ipset/$set_file"
+		reipset_file="$REIPSET_DATADIR/local/$set_name/reiptables-$set_file"
+
+		ln -f "$reiptables_file" "$reipset_file" ||
+			nctl_inc_rc rc || return $rc
+
+		reipset_sets="${reipset_sets:+$reipset_sets,}external:$set_name"
+	done
+
+	# Now we are ready to call reipset.
+	#
+	# As with previous case reipset might be running and
+	# reipset called here could exit immediately without any
+	# work as running reipset holds subsystem lock.
+	#
+	# If subsystem could not be locked reipset exits
+	# with code 254.
+	#
+	# Loop until reipset acquires it's subsystem lock
+	# and performs actions or number of tries reaches 0.
+
+	i=120
+	while :; do
+		reipset_sets="$reipset_sets" "$REIPSET" force
+		rc=$?
+		[ $rc -eq 254 -a $((i--)) -gt 0 ] || break
+		sleep 1
+	done
+
+	return $rc
+}
+
 __restore_original_files=n
 exit_handler()
 {
 	# revert before exit on failure
 	if ! nctl_is_no "$__restore_original_files"; then
 		echo '** Restoring original configuration **'
+
+		nctl_restore \
+			"$REIPTABLES_DATADIR/usrxml/ipset/$SNAT4_IPSET.rules" \
+			"$REIPTABLES_DATADIR/usrxml/ipset/$SNAT6_IPSET.rules" ||
+		nctl_inc_rc nctl_rc
+
+		# reload ipset rules via reipset
+		reiptables_ipset ||
+			nctl_inc_rc nctl_rc
 
 		# restore rules
 		sudo iptables-restore <"$reiptables_save" ||
@@ -104,9 +185,15 @@ exit_handler()
 			nctl_inc_rc nctl_rc
 	fi
 
-	# Remove backups
+	# Remove runtime files
 	rm -f "$reiptables_save" "$reip6tables_save" ||
 		nctl_inc_rc nctl_rc
+
+	# Remove backups
+	nctl_cleanup \
+		"$REIPTABLES_DATADIR/usrxml/ipset/$SNAT4_IPSET.rules" \
+		"$REIPTABLES_DATADIR/usrxml/ipset/$SNAT6_IPSET.rules" ||
+	nctl_inc_rc nctl_rc
 
 	# Report end
 	nctl_end_msg
@@ -124,7 +211,7 @@ reiptables()
 {
 	local iptables="${1:?missing 1st argument to function \"$FUNCNAME\" (iptables)}"
 	local iptables_restore
-	local iptables_file_tmp
+	local iptables_file chain_file
 	local f
 
 	shift
@@ -133,9 +220,11 @@ reiptables()
 	case "$iptables" in
 		[Ii][Pp][Tt][Aa][Bb][Ll][Ee][Ss])
 			iptables_restore='iptables-restore'
+			chain_file="$REIPTABLES_DATADIR/usrxml/iptables/$SNAT4_CHAIN"
 			;;
 		[Ii][Pp]6[Tt][Aa][Bb][Ll][Ee][Ss])
 			iptables_restore='ip6tables-restore'
+			chain_file="$REIPTABLES_DATADIR/usrxml/ip6tables/$SNAT6_CHAIN"
 			;;
 		*)
 			nctl_log_msg 'Unsupported tables type: %s\n' \
@@ -149,22 +238,20 @@ reiptables()
 
 	nctl_absolute "$iptables_restore" 'iptables_restore' || return
 
-	iptables_file_tmp="$NCTL_TMPDIR/$iptables.new.XXXXXXXX"
-	iptables_file_tmp="$(mktemp "$iptables_file_tmp")" || return
-	trap 'rm -f "$iptables_file_tmp"' RETURN
+	iptables_file="$NCTL_TMPDIR/$iptables.XXXXXXXX"
+	iptables_file="$(mktemp "$iptables_file")" || return
+	trap 'rm -f "$iptables_file"' RETURN
 
-	for f in "$@"; do
-		cat "$f" || return
-		# end each file with \n
-		echo
-	done >"$iptables_file_tmp"
-
-	# substitude patterns
-	sed -E -e "${reiptables_sed[*]}" \
-		-i "$iptables_file_tmp" || return
+	sed -E -e '/^[[:space:]]*(#|$)/d' "$chain_file" | \
+		for f in "$@"; do
+			# substitude
+			sed -E "${reiptables_sed[@]}" "$f" || exit
+			# end each file with \n
+			echo
+		done >"$iptables_file" || return
 
 	# actually load rules
-	sudo "$iptables_restore" <"$iptables_file_tmp"
+	sudo "$iptables_restore" <"$iptables_file"
 }
 
 # Report start
@@ -175,11 +262,42 @@ nctl_log_msg 'Backup original configuration\n'
 reiptables_save="$(mktemp "$reiptables_save")"
 reip6tables_save="$(mktemp "$reip6tables_save")"
 {
+	set -e
+
+	nctl_backup \
+		"$REIPTABLES_DATADIR/usrxml/ipset/$SNAT4_IPSET.rules" \
+		"$REIPTABLES_DATADIR/usrxml/ipset/$SNAT6_IPSET.rules"
+
 	sudo iptables-save >"$reiptables_save"
 	sudo ip6tables-save >"$reip6tables_save"
 } 2>&1 |nctl_log_pipe
 nctl_check_ok 'ERRORS WHEN BACKUP FILES\n'
 __restore_original_files=y
+
+# Create rules data files
+nctl_log_msg 'Creating rules data files\n'
+gawk \
+	-v nctl_prefix="$NCTL_PREFIX" \
+	\
+	-v reiptables_dir="$REIPTABLES_DIR" \
+	-v reiptables_datadir="$REIPTABLES_DATADIR" \
+	-v chain4="$SNAT4_CHAIN" \
+	-v ipset4="$SNAT4_IPSET" \
+	-v mark4="$SNAT4_MARK" \
+	\
+	-v reip6tables_dir="$REIPTABLES_DIR" \
+	-v reip6tables_datadir="$REIPTABLES_DATADIR" \
+	-v chain6="$SNAT6_CHAIN" \
+	-v ipset6="$SNAT6_IPSET" \
+	-v mark6="$SNAT6_MARK" \
+	\
+	-f "$NCTL_PREFIX/bin/xtables.awk" \
+	"$USR_XML" 2>&1 |nctl_log_pipe
+nctl_check_ok 'ERRORS WHEN CREATING RULES FILES\n'
+
+# Load ipset rules via reipset
+reiptables_ipset
+nctl_check_ok 'ERRORS WHEN LOADING IPSET RULES\n'
 
 # Adjust iptables rules in kernel
 reiptables 'iptables' "${reiptables_tables[@]}" 2>&1 |nctl_log_pipe

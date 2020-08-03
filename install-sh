@@ -52,4 +52,14 @@ adj_rights '' 0440 "$sysconfig_dir/sudoers.d/10-netctl-reiptables"
 
 [ "$INSTALL_EUID" != 0 ] && owner='' || owner="root:$RECONFIGURE_GROUP"
 
+# $DEST/netctl/etc/reiptables/
+adj_rights "$owner" 2775 \
+	"$DEST/netctl/etc/reiptables/data/usrxml" \
+	"$DEST/netctl/etc/reiptables/data/usrxml/ipset" \
+	"$DEST/netctl/etc/reiptables/data/usrxml/iptables" \
+	"$DEST/netctl/etc/reiptables/data/usrxml/ip6tables"
+
+adj_rights "$owner" 0664 \
+	"$DEST/netctl/etc/reiptables/data/usrxml/usr.xml"
+
 return 0

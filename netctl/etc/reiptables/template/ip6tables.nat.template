@@ -1,5 +1,7 @@
 *nat
 
+:%SNAT6_CHAIN_TEMPL% - [0:0]
+
 :PREROUTING  ACCEPT [0:0]
 :OUTPUT      ACCEPT [0:0]
 :POSTROUTING ACCEPT [0:0]
@@ -27,7 +29,12 @@
 # permitting to create generic rules.
 #
 -A POSTROUTING -m addrtype --src-type LOCAL -j ACCEPT
--A POSTROUTING -m devgroup --dst-group 0x1/0xf -j MASQUERADE
+-A POSTROUTING -m devgroup --dst-group 0x1/0xf -j %SNAT6_CHAIN_TEMPL%
 -A POSTROUTING -m mark --mark 0x7fff0001/0xffffffff -m conntrack --ctstate DNAT -j MASQUERADE
+
+-A %SNAT6_CHAIN_TEMPL% -j SET --map-set %SNAT6_IPSET_TEMPL% src --map-mark
+#SNAT6_CHAIN_FILE#
+-A %SNAT6_CHAIN_TEMPL% -m conntrack ! --ctstate SNAT -j MASQUERADE
+-A %SNAT6_CHAIN_TEMPL% -j ACCEPT
 
 COMMIT
