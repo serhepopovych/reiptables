@@ -1,7 +1,6 @@
 *filter
 
 :INP-RESET        - [0:0]
-:INP-DIVERT       - [0:0]
 :INP-BLOCK        - [0:0]
 :INP-22           - [0:0]
 :INP-RATE         - [0:0]
@@ -226,12 +225,11 @@
 -A FWD-U2D -m conntrack ! --ctstate ESTABLISHED,RELATED,UNTRACKED,DNAT -j DROP
 -A FWD-U2D -m conntrack --ctstate DNAT -m connlimit --connlimit-above 1024 --connlimit-mask 32 --connlimit-saddr -j REJECT --reject-with icmp-admin-prohibited
 -A FWD-U2D -j CLASSIFY --set-class 1:0
-#-A FWD-U2D -j SET --map-set fwd-u2d-classify-v4 dst --map-prio
-#-A FWD-U2D -a accept -i %WO_IF% -j CLASSIFY --set-xclass 0x10000/0xffff4000
-#-A FWD-U2D -a accept -i %LO_IF% -j CLASSIFY --set-xclass 0x10000/0xffff8000
-#-A FWD-U2D -a accept -m realm --realm 0x00080000/0xffff0000 -j CLASSIFY --set-xclass 0x10000/0xffff4000
-#-A FWD-U2D -a accept -m realm --realm 0x00040000/0xffff0000 -j CLASSIFY --set-xclass 0x10000/0xffff8000
-#-A FWD-U2D -a accept -j CLASSIFY --set-xclass 0x10000/0xffffc000
+-A FWD-U2D -j SET --map-set fwd-u2d-classify-v4 dst --map-prio
+#-A FWD-U2D -i %WO_IF% -j CLASSIFY --set-xclass 0x10000/0xffff4000
+#-A FWD-U2D -i %LO_IF% -j CLASSIFY --set-xclass 0x10000/0xffff8000
+#-A FWD-U2D -m realm --realm 0x00080000/0xffff0000 -j CLASSIFY --set-xclass 0x10000/0xffff4000
+#-A FWD-U2D -m realm --realm 0x00040000/0xffff0000 -j CLASSIFY --set-xclass 0x10000/0xffff8000
 -A FWD-U2D -j ACCEPT
 
 # Forward DOWNLINK traffic to UPLINK
@@ -275,10 +273,9 @@
 -A FWD-D2U -m conntrack --ctstate NEW,DNAT -m connlimit --connlimit-above 1024 --connlimit-mask 32 --connlimit-saddr -j REJECT --reject-with icmp-admin-prohibited
 -A FWD-D2U -p tcp -m set --match-set mailports dst -j FWD-MAIL
 -A FWD-D2U -j CLASSIFY --set-class 1:0
-#-A FWD-D2U -j SET --map-set fwd-d2u-classify-v4 src --map-prio
-#-A FWD-D2U -a accept -m realm --realm 0x0008/0xffff -j CLASSIFY --set-xclass 0x10000/0xffff4000
-#-A FWD-D2U -a accept -m realm --realm 0x0004/0xffff -j CLASSIFY --set-xclass 0x10000/0xffff8000
-#-A FWD-D2U -a accept -j CLASSIFY --set-xclass 0x10000/0xffffc000
+-A FWD-D2U -j SET --map-set fwd-d2u-classify-v4 src --map-prio
+#-A FWD-D2U -m realm --realm 0x0008/0xffff -j CLASSIFY --set-xclass 0x10000/0xffff4000
+#-A FWD-D2U -m realm --realm 0x0004/0xffff -j CLASSIFY --set-xclass 0x10000/0xffff8000
 -A FWD-D2U -j ACCEPT
 
 # Forward DOWNLINK traffic to DOWNLINK
