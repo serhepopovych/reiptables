@@ -32,7 +32,7 @@
 -A POSTROUTING -m devgroup --dst-group 0x1/0xf -j %SNAT4_CHAIN_TEMPL%
 -A POSTROUTING -m mark --mark 0x7fff0001/0xffffffff -m conntrack --ctstate DNAT -j MASQUERADE
 
--A %SNAT4_CHAIN_TEMPL% -j SET --map-set %SNAT4_IPSET_TEMPL% src --map-mark
+-A %SNAT4_CHAIN_TEMPL% -j SET --map-set %snat4_ipset_templ% src --map-mark
 #SNAT4_CHAIN_FILE#
 -A %SNAT4_CHAIN_TEMPL% -m conntrack ! --ctstate SNAT -j MASQUERADE
 -A %SNAT4_CHAIN_TEMPL% -j ACCEPT
