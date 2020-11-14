@@ -33,6 +33,7 @@
 -A POSTROUTING -m mark --mark 0x7fff0001/0xffffffff -m conntrack --ctstate DNAT -j MASQUERADE
 
 -A %SNAT6_CHAIN_TEMPL% -j SET --map-set %snat6_ipset_templ% src --map-mark
+-A %SNAT6_CHAIN_TEMPL% -m mark --mark %snat6_mark_templ% -m comment --comment "no SNAT" -j ACCEPT
 #SNAT6_CHAIN_FILE#
 -A %SNAT6_CHAIN_TEMPL% -m conntrack ! --ctstate SNAT -j MASQUERADE
 -A %SNAT6_CHAIN_TEMPL% -j ACCEPT
