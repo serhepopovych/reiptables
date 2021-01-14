@@ -11,6 +11,7 @@ if prepare_file "$f"; then
 	cat >>"$f" <<'_EOF'
 
 # conntrack
+nf_conntrack
 nf_conntrack_amanda
 nf_conntrack_ftp
 nf_conntrack_h323
@@ -24,6 +25,7 @@ nf_conntrack_netbios_ns
 nf_conntrack_sane
 
 # nat
+nf_nat
 nf_nat_amanda
 nf_nat_ftp
 nf_nat_h323
