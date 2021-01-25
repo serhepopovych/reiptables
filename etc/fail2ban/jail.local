@@ -1,0 +1,18 @@
+
+[DEFAULT]
+
+bantime.increment = true
+bantime.rndtime = 1800
+bantime.maxtime = 2147483
+bantime.overalljails = true
+bantime = 10800
+findtime = 1800
+
+banaction = reiptables-reipset
+banaction_allports = iptables-ipset-proto6
+
+[ssh]
+#ignoreip = 127.0.0.0/8
+enabled = true
+#mode = aggressive
+maxretry = 10

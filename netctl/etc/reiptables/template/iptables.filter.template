@@ -2,8 +2,6 @@
 
 :INP-RESET        - [0:0]
 :INP-BLOCK        - [0:0]
-:INP-22           - [0:0]
-:INP-RATE         - [0:0]
 :INPUT       ACCEPT [0:0]
 
 :FWD-RESET        - [0:0]
@@ -55,33 +53,6 @@
 -A INP-BLOCK -m recent --remove --name INP-RATE --rsource -j SET --add-set inp-block-v4 dst,dst,src --exist
 -A INP-BLOCK -j INP-RESET
 
-# Rate limit packets to local service on port 22
-# ----------------------------------------------
-#
-# 1. Discard packet (and any further packets, see INP-BLOCK chain
-#    for more information) to port 22 if already more than 10
-#    packets within 60 seconds or less comes from given source.
-#
-# 2. Allow packet overwise and update it's arrival in recent
-#    for further inspection by the (1).
-#
--A INP-22 -m recent --rcheck --seconds 60 --reap --hitcount 10 --rttl --name INP-RATE --rsource -j INP-BLOCK
--A INP-22 -m recent --set --name INP-RATE --rsource -j ACCEPT
-
-# Rate limit packets to local service, listening on port
-# ------------------------------------------------------
-#
-# 1. Match packet, destined to the given service on local host
-#    and apply specific rate limiting policy for it.
-#
-# 2. If service has no specific ratelimiting policy, but
-#    requires rate limiting access to it (e.g.: flow reaches
-#    this chain), then packet rejected with ICMP Communication
-#    Administratively Prohibited.
-#
--A INP-RATE -p tcp --dport 22 -j INP-22
--A INP-RATE -j REJECT --reject-with icmp-admin-prohibited
-
 # INPUT chain
 # -----------
 #
@@ -96,7 +67,7 @@
 #
 # 3. Discard packets to local destination address and port/proto from
 #    source network/address. Blocked entry in inp-block-v4 set manually
-#    or automatically by ratelimiting rules.
+#    or automatically by fail2ban rules.
 #
 # 4. Accept packets for already ESTABLISHED connection and packets
 #    RELATED to the existing connection (like ftp-data channel,
@@ -110,9 +81,6 @@
 # 7. Discard packets not going to allowed destination address and port
 #    from allowed foreign source.
 #
-# 8. Apply ratelimiting rules for packets destined locally to
-#    given address and port from specified foregin source address.
-#
 # Finally accept packets, which are not subject for ratelimiting rules by
 # chain policy.
 #
@@ -123,7 +91,6 @@
 -A INPUT -m conntrack ! --ctstate NEW,UNTRACKED -j INP-RESET
 -A INPUT -m mark --mark 0x7f100000/0xfff00000 -j ACCEPT
 -A INPUT -m set ! --match-set inp-allow-v4 dst,dst,src -j INP-RESET
--A INPUT -m set --match-set inp-ratelimit-v4 dst,dst,src -j INP-RATE
 
 # Forward packets destined to other hosts
 # =======================================
