@@ -1,7 +1,6 @@
 *filter
 
 :INP-RESET        - [0:0]
-:INP-BLOCK        - [0:0]
 :INPUT       ACCEPT [0:0]
 
 :FWD-RESET        - [0:0]
@@ -39,20 +38,6 @@
 -A INP-RESET -p udp -j REJECT --reject-with icmp6-port-unreachable
 -A INP-RESET -j DROP
 
-# Add entry to temporary block list from other rules
-# --------------------------------------------------
-#
-# 1. Add temporary blocking rule from other rules (e.g. service access
-#    rate limiting rules) with default ipset list timeout value.
-#    If you need custom timeout for listing entry as blocked, then you
-#    need to create custom chain, with same rule set as this, ut.
-#    specifying custom timeout (with --timeout option) for SET target.
-#
-# 2. Discard packet.
-#
--A INP-BLOCK -m recent --remove --name INP-RATE --rsource -j SET --add-set inp-block-v6 dst,dst,src --exist
--A INP-BLOCK -j INP-RESET
-
 # INPUT chain
 # -----------
 #
@@ -66,7 +51,7 @@
 #    discard bit cleared.
 #
 # 3. Discard packets to local destination address and port/proto from
-#    source network/address. Blocked entry in inp-block-v4 set manually
+#    source network/address. Blocked entry in inp-block-v6 set manually
 #    or automatically by fail2ban rules.
 #
 # 4. Accept packets for already ESTABLISHED connection and packets
