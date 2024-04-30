@@ -1,6 +1,6 @@
 *raw
 
-:PRE-DIVERT       - [0:0]
+:PRE-BLOCK        - [0:0]
 :PRE-LOCAL        - [0:0]
 :PREROUTING  ACCEPT [0:0]
 
@@ -47,18 +47,10 @@
 # 1. Mark packet for divert and annotate it with discard eligibility bit.
 #    Further rules must clear this bit to make it accepted later on input.
 #
-# 2. Clear discard bit for ICMPs since they could be matched to socket in
-#    established state later.
+# 2. Clear discard bit for TCP packets to 80 port and accept packet.
 #
-# 3. Clear discard bit for rate-limited per source TCP packets to 80 port.
-#
-# 4. Accept for connection tracking all packets for discard bit cleared.
-#    Return to the caller chain that may set packet as untracked.
-#
--A PRE-DIVERT -j MARK --set-xmark 0x7f110000/0xffffffff
--A PRE-DIVERT -p icmp -j MARK --set-xmark 0x00000/0x3ffff
--A PRE-DIVERT -p tcp -m tcp --dport 80 -m hashlimit --hashlimit-upto 25/min --hashlimit-burst 5 --hashlimit-mode srcip --hashlimit-name PRE-DIVERT-HTTP --hashlimit-htable-size 16384 --hashlimit-htable-gcinterval 30000 -j MARK --set-xmark 0x00050/0x3ffff
--A PRE-DIVERT -m mark --mark 0x0/0x10000 -j ACCEPT
+-A PRE-BLOCK -j MARK --set-xmark 0x7f110000/0xffffffff
+-A PRE-BLOCK -p tcp -m tcp --dport 80 -j MARK --set-xmark 0x00050/0x3ffff
 
 # Input packets destined locally
 # ------------------------------
@@ -70,19 +62,18 @@
 #
 -A PRE-LOCAL ! -i lo -m set ! --match-set pre-inp-notrack-v4 dst,dst,src -j ACCEPT
 -A PRE-LOCAL -j CT --notrack
--A PRE-LOCAL -j ACCEPT
 
 # PREROUTING chain
 # ----------------
 #
-# 1. If packet comes from interface group other than uplink and uRPF checks
-#    in strict mode failed and src not in bypass list, drop packet silently.
+# 1. If packet comes from interface other than uplink, src not in bypass list and
+#    uRPF checks in strict mode failed drop packet silently.
 #
 # 2. Process packets for local destinations.
 #
-# 3. If packet is from downlink interface group and it's source address is
-#    in pre-block-v4 and destination address not in list pre-allow4blk-v4
-#    then mark packet accordingly.
+# 3. If packet comes from interface other than uplink and it's source address is
+#    in pre-block-v4 and destination address not in list pre-allow4blk-v4 then
+#    block packet.
 #
 # 4. Accept packet. Suppress connection tracking if packet's source/destination
 #    matches pre-fwd-notrack-v4 set. This affects packet defragmentation process:
@@ -91,8 +82,8 @@
 #      parameter of iptables_raw module is set.
 #
 -A PREROUTING -m devgroup ! --src-group 0x1/0xf -m rpfilter --invert -m set ! --match-set pre-skip-uRPF-v4 src -j DROP
--A PREROUTING -m addrtype --dst-type LOCAL -j PRE-LOCAL
--A PREROUTING -m devgroup --src-group 0x2/0xf -m set --match-set pre-block-v4 src -m set ! --match-set pre-allow4blk-v4 dst -j PRE-DIVERT
+-A PREROUTING -m addrtype ! --dst-type UNICAST -g PRE-LOCAL
+-A PREROUTING -m devgroup ! --src-group 0x1/0xf -m set --match-set pre-block-v4 src -m set ! --match-set pre-allow4blk-v4 dst -g PRE-BLOCK
 -A PREROUTING -m set --match-set pre-fwd-notrack-v4 src,dst -j CT --notrack
 
 # OUTPUT chain

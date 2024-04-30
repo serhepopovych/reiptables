@@ -8,6 +8,7 @@
 
 # PREROUTING chain
 # ----------------
+-A PREROUTING -m mark --mark 0x7f100000/0xfff00000 -j DNAT --to-destination %l0_ip6_addr%
 
 # POSTROUTING chain
 # -----------------

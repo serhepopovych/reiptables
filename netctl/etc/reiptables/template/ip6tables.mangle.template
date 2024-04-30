@@ -1,59 +1,16 @@
-*mangle
-
-:PRE-DIVERT       - [0:0]
-:PREROUTING  ACCEPT [0:0]
-
-:INPUT       ACCEPT [0:0]
-:FORWARD     ACCEPT [0:0]
-:OUTPUT      ACCEPT [0:0]
-:POSTROUTING ACCEPT [0:0]
-
-# Divert non-locally destined packets to local socket
-# ---------------------------------------------------
+#*mangle
 #
-# 1. Set discard bit on packet to catch misconfigurations (e.g. missing
-#    Policy-Base Routing (PBR) rules configuration later in forwarding
-#    path) or packets (e.g. ICMPs) that aren't belong to socket in
-#    established state.
+#:PREROUTING  ACCEPT [0:0]
+#:INPUT       ACCEPT [0:0]
+#:FORWARD     ACCEPT [0:0]
+#:OUTPUT      ACCEPT [0:0]
+#:POSTROUTING ACCEPT [0:0]
 #
-# 2. If transparent, non-wildcard (i.e. in ESTABLISHED or CLOSING state)
-#    socket is found for src/dst and addr/port tuples from packet, clear
-#    discard bit and divert id to annotate that packet belongs to socket
-#    in established state.
+## FORWARD chain
+## -------------
+##
+## Mark conntracked packets forwarded between downlinks for future use.
+##
+##-A FORWARD -m conntrack ! --ctstate UNTRACKED -m devgroup --src-group 0x2/0xf --dst-group 0x2/0xf -j MARK --set-xmark 0x7fff0001/0xffffffff
 #
-# 3. Accept packet if condition described in (2) satisfied.
-#
-# 4. If packet marked for divert correctly TPROXY it to socket. Clear
-#    discard bit as packet might be initiating new connection.
-#
-# Note that packets with discard bit set here will have connection
-# tracking enabled on them and therefore could be matched later with
-# -m conntrack. That could be used to accept packets that otherwise
-# should be discarded. For example accept spoofed ICMP packets to
-# established connections to take control on them.
-#
-# To prevent such packets from being accepted discard eligibility bit
-# should be considered and corresponding action applied if needed prior
-# to matching connection tracking state.
-#
--A PRE-DIVERT -j MARK --set-xmark 0x10000/0x10000
--A PRE-DIVERT -m socket --transparent -j MARK --set-xmark 0x0/0x1ffff
--A PRE-DIVERT -m mark --mark 0x0/0x10000 -j ACCEPT
--A PRE-DIVERT -p tcp -m mark --mark 0x50/0x2ffff -j TPROXY --on-port 80 --on-ip 100::1 --tproxy-mark 0x0/0x10000
-
-# PREROUTING chain
-# ----------------
-#
-# 1. Try to divert packets marked as eligible for divert.
-#    Reuse mark set in 'raw' table.
-#
--A PREROUTING -m mark --mark 0x7f100000/0xfff10000 -j PRE-DIVERT
-
-# FORWARD chain
-# -------------
-#
-# Mark conntracked packets forwarded between downlinks for future use.
-#
--A FORWARD -m conntrack ! --ctstate UNTRACKED -m devgroup --src-group 0x2/0xf --dst-group 0x2/0xf -j MARK --set-xmark 0x7fff0001/0xffffffff
-
-COMMIT
+#COMMIT
